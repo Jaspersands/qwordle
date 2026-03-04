@@ -1,5 +1,6 @@
 import { MAX_GUESSES, SEQUENCE_LENGTH } from "./gate-catalog.js";
 import { mergeMark } from "./feedback.js";
+import { canCycleTokenMapping, formatTokenForBoard } from "./token-mapping.js";
 
 /**
  * @param {string} id
@@ -38,6 +39,7 @@ export function deriveKeyboardMarks(guesses) {
  *   onClear: () => void,
  *   onSubmit: () => void,
  *   onShare: () => void,
+ *   onBoardCellClick: (index: number) => void,
  *   onNewPuzzle: () => void,
  *   onOpenStats: () => void,
  *   onCloseStats: () => void,
@@ -49,13 +51,14 @@ export function createUI(handlers) {
     cadenceSelect: /** @type {HTMLSelectElement} */ (mustGetElement("cadence-select")),
     newGameButton: /** @type {HTMLButtonElement} */ (mustGetElement("new-game-btn")),
     board: mustGetElement("board"),
-    currentInput: mustGetElement("current-input"),
     keyboard: mustGetElement("keyboard"),
+    modeGuide: mustGetElement("mode-guide"),
     statusMessage: mustGetElement("status-message"),
     fidelityValue: mustGetElement("fidelity-value"),
     equivalentMessage: mustGetElement("equivalent-message"),
     guessState: mustGetElement("guess-state"),
     targetState: mustGetElement("target-state"),
+    guessCircuit: mustGetElement("guess-circuit"),
     answerSection: mustGetElement("answer-section"),
     answerReveal: mustGetElement("answer-reveal"),
     backspaceButton: /** @type {HTMLButtonElement} */ (mustGetElement("backspace-btn")),
@@ -90,6 +93,26 @@ export function createUI(handlers) {
     }
   });
 
+  elements.board.addEventListener("click", (event) => {
+    const target = /** @type {HTMLElement} */ (event.target);
+    const cell = target.closest(".cell.editable[data-current-col]");
+    if (!cell) {
+      return;
+    }
+
+    const colValue = cell.getAttribute("data-current-col");
+    if (!colValue) {
+      return;
+    }
+
+    const index = Number(colValue);
+    if (!Number.isInteger(index) || index < 0 || index >= SEQUENCE_LENGTH) {
+      return;
+    }
+
+    handlers.onBoardCellClick(index);
+  });
+
   elements.backspaceButton.addEventListener("click", handlers.onBackspace);
   elements.clearButton.addEventListener("click", handlers.onClear);
   elements.submitButton.addEventListener("click", handlers.onSubmit);
@@ -112,22 +135,11 @@ export function createUI(handlers) {
   });
 
   /**
-   * @param {string[]} tokens
-   */
-  function renderCurrentInput(tokens) {
-    elements.currentInput.innerHTML = "";
-    for (let i = 0; i < SEQUENCE_LENGTH; i += 1) {
-      const tile = document.createElement("div");
-      tile.className = "current-token";
-      tile.textContent = tokens[i] ?? "";
-      elements.currentInput.appendChild(tile);
-    }
-  }
-
-  /**
    * @param {import('./game-engine.js').GameState} gameState
+   * @param {{ qubits: number }} modeConfig
+   * @param {string[]} currentInputMappings
    */
-  function renderBoard(gameState) {
+  function renderBoard(gameState, modeConfig, currentInputMappings) {
     elements.board.innerHTML = "";
 
     for (let row = 0; row < MAX_GUESSES; row += 1) {
@@ -140,13 +152,20 @@ export function createUI(handlers) {
         cell.className = "cell";
 
         if (guess) {
-          cell.textContent = guess.tokens[col] ?? "";
+          const token = guess.tokens[col] ?? "";
+          const mapping = Array.isArray(guess.mappings) ? guess.mappings[col] : undefined;
+          cell.textContent = formatTokenForBoard(token, mapping, modeConfig.qubits);
           cell.classList.add(guess.marks[col] ?? "absent");
         } else if (row === gameState.guesses.length && gameState.status === "in_progress") {
           const token = gameState.currentInput[col] ?? "";
-          cell.textContent = token;
           if (token) {
+            const mapping = currentInputMappings[col];
+            cell.textContent = formatTokenForBoard(token, mapping, modeConfig.qubits);
             cell.classList.add("pending");
+            if (canCycleTokenMapping(token, modeConfig.qubits)) {
+              cell.classList.add("editable");
+              cell.setAttribute("data-current-col", String(col));
+            }
           }
         }
 
@@ -159,10 +178,11 @@ export function createUI(handlers) {
 
   /**
    * @param {string[]} tokens
+   * @param {Record<string, string>} tokenHints
    * @param {Record<string, 'correct' | 'present' | 'absent'>} keyboardMarks
    * @param {boolean} disabled
    */
-  function renderKeyboard(tokens, keyboardMarks, disabled) {
+  function renderKeyboard(tokens, tokenHints, keyboardMarks, disabled) {
     elements.keyboard.innerHTML = "";
 
     for (const token of tokens) {
@@ -172,6 +192,7 @@ export function createUI(handlers) {
       button.textContent = token;
       button.dataset.token = token;
       button.disabled = disabled;
+      button.title = tokenHints[token] ?? token;
 
       const mark = keyboardMarks[token];
       if (mark) {
@@ -180,6 +201,19 @@ export function createUI(handlers) {
 
       elements.keyboard.appendChild(button);
     }
+  }
+
+  /**
+   * @param {string[]} guideLines
+   */
+  function renderModeGuide(guideLines) {
+    if (!guideLines || guideLines.length === 0) {
+      elements.modeGuide.innerHTML = "";
+      return;
+    }
+
+    const items = guideLines.map((line) => `<li>${line}</li>`).join("");
+    elements.modeGuide.innerHTML = `<h3>Gate Targets</h3><ul>${items}</ul>`;
   }
 
   /**
@@ -217,15 +251,24 @@ export function createUI(handlers) {
   /**
    * @param {{
    *   settings: { mode: string, cadence: string },
- *   modeConfig: { tokens: string[] },
- *   gameState: import('./game-engine.js').GameState,
- *   stats: import('./game-engine.js').Stats,
- *   message: string,
- *   targetStateText: string,
- * }} viewModel
- */
+   *   modeConfig: { qubits: number, tokens: string[], guideLines?: string[], tokenHints?: Record<string, string> },
+   *   gameState: import('./game-engine.js').GameState,
+   *   currentInputMappings: string[],
+   *   stats: import('./game-engine.js').Stats,
+   *   message: string,
+   *   targetStateText: string,
+   * }} viewModel
+   */
   function render(viewModel) {
-    const { settings, modeConfig, gameState, stats, message, targetStateText } = viewModel;
+    const {
+      settings,
+      modeConfig,
+      gameState,
+      currentInputMappings,
+      stats,
+      message,
+      targetStateText,
+    } = viewModel;
 
     elements.modeSelect.value = settings.mode;
     elements.cadenceSelect.value = settings.cadence;
@@ -233,11 +276,16 @@ export function createUI(handlers) {
     elements.newGameButton.textContent =
       settings.cadence === "random" ? "New Random Puzzle" : "Restart Daily Puzzle";
 
-    renderBoard(gameState);
-    renderCurrentInput(gameState.currentInput);
+    renderBoard(gameState, modeConfig, currentInputMappings);
 
     const keyboardMarks = deriveKeyboardMarks(gameState.guesses);
-    renderKeyboard(modeConfig.tokens, keyboardMarks, gameState.status !== "in_progress");
+    renderKeyboard(
+      modeConfig.tokens,
+      modeConfig.tokenHints ?? {},
+      keyboardMarks,
+      gameState.status !== "in_progress",
+    );
+    renderModeGuide(modeConfig.guideLines ?? []);
 
     elements.submitButton.disabled = gameState.status !== "in_progress";
     elements.shareButton.disabled = gameState.guesses.length === 0;
@@ -255,13 +303,13 @@ export function createUI(handlers) {
     if (gameState.guesses.length === 0) {
       elements.fidelityValue.textContent = "Fidelity: --";
       elements.guessState.textContent = "No guess submitted yet.";
-      elements.targetState.textContent = targetStateText;
+      elements.guessCircuit.textContent = "No guess submitted yet.";
       elements.equivalentMessage.classList.add("hidden");
     } else {
       const latest = gameState.guesses[gameState.guesses.length - 1];
       elements.fidelityValue.textContent = `Fidelity: ${latest.fidelity.toFixed(6)}`;
       elements.guessState.textContent = latest.guessStateText;
-      elements.targetState.textContent = latest.targetStateText;
+      elements.guessCircuit.textContent = latest.guessCircuitText ?? "No guess submitted yet.";
 
       if (latest.equivalent) {
         elements.equivalentMessage.classList.remove("hidden");
@@ -269,6 +317,8 @@ export function createUI(handlers) {
         elements.equivalentMessage.classList.add("hidden");
       }
     }
+
+    elements.targetState.textContent = targetStateText;
 
     let answerText = "";
     if (gameState.status === "lost") {

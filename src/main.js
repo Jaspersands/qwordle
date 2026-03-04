@@ -4,6 +4,7 @@ import {
   addToken,
   clearInput,
   recordGameResult,
+  refreshGuessSimulations,
   removeToken,
   submitCurrentGuess,
 } from "./game-engine.js";
@@ -27,13 +28,22 @@ import {
 } from "./storage.js";
 import { buildShareText } from "./share.js";
 import { formatTerms, simulateSequence, stateToTerms } from "./quantum/simulator.js";
+import {
+  buildMappingOptions,
+  canCycleTokenMapping,
+  mappingToSimulationToken,
+  normalizeTokenMapping,
+} from "./token-mapping.js";
 import { createUI } from "./ui.js";
+
+const SHARE_URL = "https://jaspersands.github.io/qwordle/";
 
 /**
  * @typedef {{
  *   settings: { mode: import('./gate-catalog.js').ModeId, cadence: import('./gate-catalog.js').Cadence },
  *   modeConfig: ReturnType<typeof getModeConfig>,
  *   gameState: import('./game-engine.js').GameState,
+ *   currentInputMappings: string[],
  *   stats: import('./game-engine.js').Stats,
  *   message: string,
  *   targetStateText: string,
@@ -86,10 +96,7 @@ function isUsableGame(game, mode, cadence) {
     return false;
   }
 
-  if (
-    game.currentInput.length > SEQUENCE_LENGTH ||
-    !game.currentInput.every(isValidToken)
-  ) {
+  if (game.currentInput.length > SEQUENCE_LENGTH || !game.currentInput.every(isValidToken)) {
     return false;
   }
 
@@ -119,14 +126,7 @@ function isUsableGame(game, mode, cadence) {
 }
 
 function getShareLink() {
-  try {
-    const url = new URL(window.location.href);
-    url.hash = "";
-    url.search = "";
-    return url.toString();
-  } catch {
-    return window.location.href;
-  }
+  return SHARE_URL;
 }
 
 /**
@@ -158,16 +158,35 @@ async function shareOrCopy(text, link) {
 }
 
 /**
+ * @param {string[]} tokens
+ * @param {ReturnType<typeof getModeConfig>} modeConfig
+ * @param {string[]} [existing]
+ */
+function buildCurrentInputMappings(tokens, modeConfig, existing = []) {
+  return tokens.map((token, index) =>
+    normalizeTokenMapping(token, modeConfig.qubits, existing[index]),
+  );
+}
+
+/**
  * @param {ReturnType<typeof getModeConfig>} modeConfig
  * @param {import('./game-engine.js').GameState} gameState
  */
 function computeTargetStateText(modeConfig, gameState) {
   try {
-    const targetState = simulateSequence(modeConfig.qubits, gameState.puzzle.answerTokens);
+    const simulationTokens = gameState.puzzle.answerTokens.map((token) =>
+      mappingToSimulationToken(token, modeConfig.qubits, undefined),
+    );
+    const targetState = simulateSequence(modeConfig.qubits, simulationTokens);
     return formatTerms(stateToTerms(targetState, modeConfig.qubits));
   } catch (error) {
     return error instanceof Error ? `Target simulation error: ${error.message}` : "Target simulation error.";
   }
+}
+
+function refreshSimulationViews() {
+  state.gameState = refreshGuessSimulations(state.gameState, state.modeConfig);
+  state.targetStateText = computeTargetStateText(state.modeConfig, state.gameState);
 }
 
 /**
@@ -183,7 +202,11 @@ function resolveGame(mode, cadence, forceNew = false) {
 
     if (!forceNew) {
       const stored = loadActiveGame(mode, cadence);
-      if (isUsableGame(stored, mode, cadence) && stored.puzzle.id === todayPuzzle.id) {
+      if (
+        isUsableGame(stored, mode, cadence) &&
+        stored.puzzle.id === todayPuzzle.id &&
+        stored.status === "in_progress"
+      ) {
         return stored;
       }
     }
@@ -193,7 +216,7 @@ function resolveGame(mode, cadence, forceNew = false) {
 
   if (!forceNew) {
     const stored = loadActiveGame(mode, cadence);
-    if (isUsableGame(stored, mode, cadence)) {
+    if (isUsableGame(stored, mode, cadence) && stored.status === "in_progress") {
       return stored;
     }
   }
@@ -205,6 +228,8 @@ function resolveGame(mode, cadence, forceNew = false) {
 const initialSettings = loadSettings();
 const mode = isMode(initialSettings.mode) ? initialSettings.mode : DEFAULT_MODE;
 const cadence = isCadence(initialSettings.cadence) ? initialSettings.cadence : DEFAULT_CADENCE;
+const initialModeConfig = getModeConfig(mode);
+const initialGameState = resolveGame(mode, cadence);
 
 /** @type {AppState} */
 const state = {
@@ -212,8 +237,9 @@ const state = {
     mode,
     cadence,
   },
-  modeConfig: getModeConfig(mode),
-  gameState: resolveGame(mode, cadence),
+  modeConfig: initialModeConfig,
+  gameState: refreshGuessSimulations(initialGameState, initialModeConfig),
+  currentInputMappings: buildCurrentInputMappings(initialGameState.currentInput, initialModeConfig),
   stats: loadStats(mode, cadence),
   message: "",
   targetStateText: "",
@@ -232,9 +258,10 @@ const ui = createUI({
     state.settings.mode = nextMode;
     state.modeConfig = getModeConfig(nextMode);
     state.gameState = resolveGame(nextMode, state.settings.cadence);
+    state.currentInputMappings = buildCurrentInputMappings(state.gameState.currentInput, state.modeConfig);
     state.stats = loadStats(nextMode, state.settings.cadence);
     state.message = `Mode changed to ${state.modeConfig.label}.`;
-    state.targetStateText = computeTargetStateText(state.modeConfig, state.gameState);
+    refreshSimulationViews();
 
     saveSettings(state.settings);
     saveGame(state.gameState);
@@ -248,9 +275,10 @@ const ui = createUI({
 
     state.settings.cadence = nextCadence;
     state.gameState = resolveGame(state.settings.mode, nextCadence);
+    state.currentInputMappings = buildCurrentInputMappings(state.gameState.currentInput, state.modeConfig);
     state.stats = loadStats(state.settings.mode, nextCadence);
     state.message = nextCadence === "daily" ? "Daily puzzle loaded." : "Unlimited random mode loaded.";
-    state.targetStateText = computeTargetStateText(state.modeConfig, state.gameState);
+    refreshSimulationViews();
 
     saveSettings(state.settings);
     saveGame(state.gameState);
@@ -268,13 +296,50 @@ const ui = createUI({
     }
 
     state.gameState = nextGame;
+    state.currentInputMappings = buildCurrentInputMappings(
+      state.gameState.currentInput,
+      state.modeConfig,
+      state.currentInputMappings,
+    );
     state.message = "";
     saveGame(state.gameState);
     render();
   },
 
+  onBoardCellClick(index) {
+    if (state.gameState.status !== "in_progress") {
+      return;
+    }
+
+    const token = state.gameState.currentInput[index];
+    if (!token) {
+      return;
+    }
+
+    if (!canCycleTokenMapping(token, state.modeConfig.qubits)) {
+      return;
+    }
+
+    const options = buildMappingOptions(token, state.modeConfig.qubits);
+    if (options.length <= 1) {
+      return;
+    }
+
+    const current = normalizeTokenMapping(token, state.modeConfig.qubits, state.currentInputMappings[index]);
+    const currentIndex = options.indexOf(current);
+    const nextIndex = (currentIndex + 1) % options.length;
+    state.currentInputMappings[index] = options[nextIndex];
+    state.message = "";
+    render();
+  },
+
   onBackspace() {
     state.gameState = removeToken(state.gameState);
+    state.currentInputMappings = buildCurrentInputMappings(
+      state.gameState.currentInput,
+      state.modeConfig,
+      state.currentInputMappings,
+    );
     state.message = "";
     saveGame(state.gameState);
     render();
@@ -282,6 +347,7 @@ const ui = createUI({
 
   onClear() {
     state.gameState = clearInput(state.gameState);
+    state.currentInputMappings = [];
     state.message = "";
     saveGame(state.gameState);
     render();
@@ -289,7 +355,7 @@ const ui = createUI({
 
   onSubmit() {
     const previousStatus = state.gameState.status;
-    const result = submitCurrentGuess(state.gameState, state.modeConfig);
+    const result = submitCurrentGuess(state.gameState, state.modeConfig, state.currentInputMappings);
 
     if (!result.ok) {
       state.message = result.error;
@@ -298,6 +364,7 @@ const ui = createUI({
     }
 
     state.gameState = result.gameState;
+    state.currentInputMappings = [];
 
     if (result.completedNow && previousStatus === "in_progress") {
       const won = state.gameState.status === "won";
@@ -354,11 +421,12 @@ const ui = createUI({
   onNewPuzzle() {
     const forceNew = true;
     state.gameState = resolveGame(state.settings.mode, state.settings.cadence, forceNew);
+    state.currentInputMappings = buildCurrentInputMappings(state.gameState.currentInput, state.modeConfig);
     state.message =
       state.settings.cadence === "daily"
         ? "Daily puzzle restarted."
         : "New random puzzle generated.";
-    state.targetStateText = computeTargetStateText(state.modeConfig, state.gameState);
+    refreshSimulationViews();
 
     saveGame(state.gameState);
     render();
@@ -378,6 +446,7 @@ function render() {
     settings: state.settings,
     modeConfig: state.modeConfig,
     gameState: state.gameState,
+    currentInputMappings: state.currentInputMappings,
     stats: state.stats,
     message: state.message,
     targetStateText: state.targetStateText,

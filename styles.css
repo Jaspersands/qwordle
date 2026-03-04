@@ -186,11 +186,24 @@ button:disabled {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.02em;
+  font-size: 0.72rem;
+  text-align: center;
+  padding: 0.1rem 0.2rem;
+  line-height: 1.12;
 }
 
 .cell.pending {
   border-style: dashed;
   background: #ffffff;
+}
+
+.cell.editable {
+  cursor: pointer;
+  border-style: dashed;
+}
+
+.cell.editable:hover {
+  border-color: var(--accent-2);
 }
 
 .cell.correct,
@@ -212,24 +225,6 @@ button:disabled {
   background: var(--absent);
   color: #fff;
   border-color: transparent;
-}
-
-.input-preview {
-  margin-top: 0.8rem;
-  display: grid;
-  gap: 0.5rem;
-}
-
-.input-preview .label {
-  font-size: 0.85rem;
-  color: var(--muted);
-  font-weight: 700;
-}
-
-.current-input {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0.45rem;
 }
 
 .actions {
@@ -260,6 +255,30 @@ button:disabled {
   padding: 0.5rem 0.4rem;
 }
 
+.mode-guide {
+  margin-top: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  background: #f8fbfb;
+}
+
+.mode-guide h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.9rem;
+}
+
+.mode-guide ul {
+  margin: 0;
+  padding-left: 1rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.mode-guide li + li {
+  margin-top: 0.22rem;
+}
+
 .sim-head {
   display: flex;
   justify-content: space-between;
@@ -271,6 +290,14 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.8rem;
+}
+
+.sim-circuit {
+  margin-top: 0.75rem;
+}
+
+.sim-circuit h3 {
+  margin: 0 0 0.4rem;
 }
 
 pre {
@@ -293,6 +320,10 @@ pre {
 
 .hidden {
   display: none;
+}
+
+.compat-hidden {
+  display: none !important;
 }
 
 .answer p {
@@ -369,8 +400,7 @@ pre {
     grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
   }
 
-  .board-row,
-  .current-input {
+  .board-row {
     gap: 0.35rem;
   }
 

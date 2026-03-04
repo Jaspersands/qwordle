@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 
 import {
   computeFidelity,
+  formatCircuit,
+  getDefaultSimulationMapping,
+  normalizeSimulationMapping,
   simulateSequence,
   stateToTerms,
 } from "../src/quantum/simulator.js";
@@ -49,4 +52,36 @@ test("simulator: state terms include only non-negligible amplitudes", () => {
 
   assert.equal(terms.length, 2);
   assert.equal(terms[0].ket.startsWith("|"), true);
+});
+
+test("simulator: mapping can redirect single-qubit gates", () => {
+  const mapping = normalizeSimulationMapping(2, {
+    singleQubitTarget: 1,
+  });
+  const state = simulateSequence(2, ["X"], mapping);
+
+  approxEqual(state[0].re, 0);
+  approxEqual(state[2].re, 1);
+});
+
+test("simulator: mapping can redirect CX control/target pair", () => {
+  const mapping = normalizeSimulationMapping(2, {
+    singleQubitTarget: 1,
+    twoQubit: { control: 1, target: 0 },
+  });
+  const state = simulateSequence(2, ["X", "CX"], mapping);
+
+  approxEqual(state[0].re, 0);
+  approxEqual(state[3].re, 1);
+});
+
+test("simulator: formatCircuit renders current mapping", () => {
+  const mapping = getDefaultSimulationMapping(2);
+  const text = formatCircuit(["H", "CX"], 2, mapping);
+
+  assert.match(text, /q0:/);
+  assert.match(text, /q1:/);
+  assert.match(text, /-\[H\]-/);
+  assert.match(text, /--o--/);
+  assert.match(text, /--X--/);
 });

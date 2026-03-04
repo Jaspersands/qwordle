@@ -11,6 +11,7 @@ import {
 
 const SQRT_1_2 = 1 / Math.sqrt(2);
 const EPSILON = 1e-12;
+const WIRE_SEGMENT = "-----";
 
 const ZERO = complex(0, 0);
 const ONE = complex(1, 0);
@@ -47,6 +48,33 @@ const SINGLE_QUBIT_MATRICES = {
 };
 
 /**
+ * @typedef {{
+ *   singleQubitTarget?: number,
+ *   twoQubit?: { control: number, target: number },
+ *   ccx?: { control1: number, control2: number, target: number },
+ *   cswap?: { control: number, swapA: number, swapB: number },
+ * }} SimulationMapping
+ */
+
+/**
+ * @typedef {{
+ *   singleQubitTarget: number,
+ *   twoQubit: { control: number, target: number },
+ *   ccx: { control1: number, control2: number, target: number },
+ *   cswap: { control: number, swapA: number, swapB: number },
+ * }} NormalizedSimulationMapping
+ */
+
+/**
+ * @typedef {{ kind: 'single', gate: string, target: number } |
+ *   { kind: 'cx', control: number, target: number } |
+ *   { kind: 'cz', control: number, target: number } |
+ *   { kind: 'swap', qa: number, qb: number } |
+ *   { kind: 'ccx', control1: number, control2: number, target: number } |
+ *   { kind: 'cswap', control: number, swapA: number, swapB: number }} GateOperation
+ */
+
+/**
  * @param {number} numQubits
  * @returns {{ re: number, im: number }[]}
  */
@@ -74,136 +102,115 @@ export function cloneState(state) {
 
 /**
  * @param {number} numQubits
- * @param {string[]} tokens
- * @returns {{ re: number, im: number }[]}
+ * @returns {NormalizedSimulationMapping}
  */
-export function simulateSequence(numQubits, tokens) {
-  const state = zeroState(numQubits);
-  for (const token of tokens) {
-    applyGateToken(state, numQubits, token);
-  }
-  return state;
+export function getDefaultSimulationMapping(numQubits) {
+  const second = numQubits > 1 ? 1 : 0;
+  const third = numQubits > 2 ? 2 : second;
+
+  return {
+    singleQubitTarget: 0,
+    twoQubit: {
+      control: 0,
+      target: second,
+    },
+    ccx: {
+      control1: 0,
+      control2: second,
+      target: third,
+    },
+    cswap: {
+      control: 0,
+      swapA: second,
+      swapB: third,
+    },
+  };
 }
 
 /**
- * @param {{ re: number, im: number }[]} state
+ * @param {unknown} value
+ * @param {number} fallback
  * @param {number} numQubits
- * @param {string} token
  */
-export function applyGateToken(state, numQubits, token) {
-  let match = token.match(/^([XYZHST])$/);
-  if (match) {
-    const gate = match[1];
-    applySingleQubitMatrix(state, numQubits, 0, SINGLE_QUBIT_MATRICES[gate]);
-    return;
+function sanitizeIndex(value, fallback, numQubits) {
+  if (!Number.isInteger(value)) {
+    return fallback;
+  }
+  if (value < 0 || value >= numQubits) {
+    return fallback;
+  }
+  return Number(value);
+}
+
+/**
+ * @param {number[]} values
+ */
+function areDistinct(values) {
+  return new Set(values).size === values.length;
+}
+
+/**
+ * @param {number} numQubits
+ * @param {SimulationMapping | undefined} mapping
+ * @returns {NormalizedSimulationMapping}
+ */
+export function normalizeSimulationMapping(numQubits, mapping) {
+  const defaults = getDefaultSimulationMapping(numQubits);
+
+  let singleQubitTarget = sanitizeIndex(
+    mapping?.singleQubitTarget,
+    defaults.singleQubitTarget,
+    numQubits,
+  );
+
+  let twoControl = sanitizeIndex(mapping?.twoQubit?.control, defaults.twoQubit.control, numQubits);
+  let twoTarget = sanitizeIndex(mapping?.twoQubit?.target, defaults.twoQubit.target, numQubits);
+
+  if (numQubits > 1 && twoControl === twoTarget) {
+    twoControl = defaults.twoQubit.control;
+    twoTarget = defaults.twoQubit.target;
   }
 
-  match = token.match(/^([XYZHST])(\d)$/);
-  if (match) {
-    const gate = match[1];
-    const q = Number(match[2]);
-    assertQubit(q, numQubits, token);
-    applySingleQubitMatrix(state, numQubits, q, SINGLE_QUBIT_MATRICES[gate]);
-    return;
+  let ccxControl1 = sanitizeIndex(mapping?.ccx?.control1, defaults.ccx.control1, numQubits);
+  let ccxControl2 = sanitizeIndex(mapping?.ccx?.control2, defaults.ccx.control2, numQubits);
+  let ccxTarget = sanitizeIndex(mapping?.ccx?.target, defaults.ccx.target, numQubits);
+
+  if (numQubits > 2 && !areDistinct([ccxControl1, ccxControl2, ccxTarget])) {
+    ccxControl1 = defaults.ccx.control1;
+    ccxControl2 = defaults.ccx.control2;
+    ccxTarget = defaults.ccx.target;
   }
 
-  if (token === "CX") {
-    assertQubit(0, numQubits, token);
-    assertQubit(1, numQubits, token);
-    applyControlledX(state, numQubits, 0, 1);
-    return;
+  let cswapControl = sanitizeIndex(mapping?.cswap?.control, defaults.cswap.control, numQubits);
+  let cswapSwapA = sanitizeIndex(mapping?.cswap?.swapA, defaults.cswap.swapA, numQubits);
+  let cswapSwapB = sanitizeIndex(mapping?.cswap?.swapB, defaults.cswap.swapB, numQubits);
+
+  if (numQubits > 2 && !areDistinct([cswapControl, cswapSwapA, cswapSwapB])) {
+    cswapControl = defaults.cswap.control;
+    cswapSwapA = defaults.cswap.swapA;
+    cswapSwapB = defaults.cswap.swapB;
   }
 
-  match = token.match(/^CX(\d)(\d)$/);
-  if (match) {
-    const control = Number(match[1]);
-    const target = Number(match[2]);
-    assertQubit(control, numQubits, token);
-    assertQubit(target, numQubits, token);
-    assertDistinct([control, target], token);
-    applyControlledX(state, numQubits, control, target);
-    return;
-  }
+  // Single-gate mapping always needs a valid index.
+  singleQubitTarget = sanitizeIndex(singleQubitTarget, 0, numQubits);
 
-  if (token === "CZ") {
-    assertQubit(0, numQubits, token);
-    assertQubit(1, numQubits, token);
-    applyControlledZ(state, numQubits, 0, 1);
-    return;
-  }
-
-  match = token.match(/^CZ(\d)(\d)$/);
-  if (match) {
-    const control = Number(match[1]);
-    const target = Number(match[2]);
-    assertQubit(control, numQubits, token);
-    assertQubit(target, numQubits, token);
-    assertDistinct([control, target], token);
-    applyControlledZ(state, numQubits, control, target);
-    return;
-  }
-
-  if (token === "SWAP") {
-    assertQubit(0, numQubits, token);
-    assertQubit(1, numQubits, token);
-    applySwap(state, numQubits, 0, 1);
-    return;
-  }
-
-  match = token.match(/^SWAP(\d)(\d)$/);
-  if (match) {
-    const qa = Number(match[1]);
-    const qb = Number(match[2]);
-    assertQubit(qa, numQubits, token);
-    assertQubit(qb, numQubits, token);
-    assertDistinct([qa, qb], token);
-    applySwap(state, numQubits, qa, qb);
-    return;
-  }
-
-  if (token === "CCX") {
-    assertQubit(0, numQubits, token);
-    assertQubit(1, numQubits, token);
-    assertQubit(2, numQubits, token);
-    applyCCX(state, numQubits, 0, 1, 2);
-    return;
-  }
-
-  match = token.match(/^CCX(\d)(\d)(\d)$/);
-  if (match) {
-    const c1 = Number(match[1]);
-    const c2 = Number(match[2]);
-    const target = Number(match[3]);
-    assertQubit(c1, numQubits, token);
-    assertQubit(c2, numQubits, token);
-    assertQubit(target, numQubits, token);
-    assertDistinct([c1, c2, target], token);
-    applyCCX(state, numQubits, c1, c2, target);
-    return;
-  }
-
-  if (token === "CSWAP") {
-    assertQubit(0, numQubits, token);
-    assertQubit(1, numQubits, token);
-    assertQubit(2, numQubits, token);
-    applyCSWAP(state, numQubits, 0, 1, 2);
-    return;
-  }
-
-  match = token.match(/^CSWAP(\d)(\d)(\d)$/);
-  if (match) {
-    const control = Number(match[1]);
-    const qa = Number(match[2]);
-    const qb = Number(match[3]);
-    assertQubit(control, numQubits, token);
-    assertQubit(qa, numQubits, token);
-    assertQubit(qb, numQubits, token);
-    assertDistinct([control, qa, qb], token);
-    applyCSWAP(state, numQubits, control, qa, qb);
-    return;
-  }
-
-  throw new Error(`Unsupported gate token: ${token}`);
+  return {
+    singleQubitTarget,
+    twoQubit: {
+      control: twoControl,
+      target: twoTarget,
+    },
+    ccx: {
+      control1: ccxControl1,
+      control2: ccxControl2,
+      target: ccxTarget,
+    },
+    cswap: {
+      control: cswapControl,
+      swapA: cswapSwapA,
+      swapB: cswapSwapB,
+    },
+  };
 }
 
 /**
@@ -222,9 +229,133 @@ function assertQubit(index, numQubits, token) {
  * @param {string} token
  */
 function assertDistinct(indices, token) {
-  if (new Set(indices).size !== indices.length) {
+  if (!areDistinct(indices)) {
     throw new Error(`Token ${token} reuses qubit indices.`);
   }
+}
+
+/**
+ * @param {string} token
+ * @param {number} numQubits
+ * @param {SimulationMapping | undefined} mapping
+ * @returns {GateOperation}
+ */
+export function resolveGateOperation(token, numQubits, mapping) {
+  const normalized = normalizeSimulationMapping(numQubits, mapping);
+
+  let match = token.match(/^([XYZHST])$/);
+  if (match) {
+    const gate = match[1];
+    const target = normalized.singleQubitTarget;
+    assertQubit(target, numQubits, token);
+    return { kind: "single", gate, target };
+  }
+
+  match = token.match(/^([XYZHST])(\d)$/);
+  if (match) {
+    const gate = match[1];
+    const target = Number(match[2]);
+    assertQubit(target, numQubits, token);
+    return { kind: "single", gate, target };
+  }
+
+  if (token === "CX") {
+    const { control, target } = normalized.twoQubit;
+    assertQubit(control, numQubits, token);
+    assertQubit(target, numQubits, token);
+    assertDistinct([control, target], token);
+    return { kind: "cx", control, target };
+  }
+
+  match = token.match(/^CX(\d)(\d)$/);
+  if (match) {
+    const control = Number(match[1]);
+    const target = Number(match[2]);
+    assertQubit(control, numQubits, token);
+    assertQubit(target, numQubits, token);
+    assertDistinct([control, target], token);
+    return { kind: "cx", control, target };
+  }
+
+  if (token === "CZ") {
+    const { control, target } = normalized.twoQubit;
+    assertQubit(control, numQubits, token);
+    assertQubit(target, numQubits, token);
+    assertDistinct([control, target], token);
+    return { kind: "cz", control, target };
+  }
+
+  match = token.match(/^CZ(\d)(\d)$/);
+  if (match) {
+    const control = Number(match[1]);
+    const target = Number(match[2]);
+    assertQubit(control, numQubits, token);
+    assertQubit(target, numQubits, token);
+    assertDistinct([control, target], token);
+    return { kind: "cz", control, target };
+  }
+
+  if (token === "SWAP") {
+    const { control, target } = normalized.twoQubit;
+    assertQubit(control, numQubits, token);
+    assertQubit(target, numQubits, token);
+    assertDistinct([control, target], token);
+    return { kind: "swap", qa: control, qb: target };
+  }
+
+  match = token.match(/^SWAP(\d)(\d)$/);
+  if (match) {
+    const qa = Number(match[1]);
+    const qb = Number(match[2]);
+    assertQubit(qa, numQubits, token);
+    assertQubit(qb, numQubits, token);
+    assertDistinct([qa, qb], token);
+    return { kind: "swap", qa, qb };
+  }
+
+  if (token === "CCX") {
+    const { control1, control2, target } = normalized.ccx;
+    assertQubit(control1, numQubits, token);
+    assertQubit(control2, numQubits, token);
+    assertQubit(target, numQubits, token);
+    assertDistinct([control1, control2, target], token);
+    return { kind: "ccx", control1, control2, target };
+  }
+
+  match = token.match(/^CCX(\d)(\d)(\d)$/);
+  if (match) {
+    const control1 = Number(match[1]);
+    const control2 = Number(match[2]);
+    const target = Number(match[3]);
+    assertQubit(control1, numQubits, token);
+    assertQubit(control2, numQubits, token);
+    assertQubit(target, numQubits, token);
+    assertDistinct([control1, control2, target], token);
+    return { kind: "ccx", control1, control2, target };
+  }
+
+  if (token === "CSWAP") {
+    const { control, swapA, swapB } = normalized.cswap;
+    assertQubit(control, numQubits, token);
+    assertQubit(swapA, numQubits, token);
+    assertQubit(swapB, numQubits, token);
+    assertDistinct([control, swapA, swapB], token);
+    return { kind: "cswap", control, swapA, swapB };
+  }
+
+  match = token.match(/^CSWAP(\d)(\d)(\d)$/);
+  if (match) {
+    const control = Number(match[1]);
+    const swapA = Number(match[2]);
+    const swapB = Number(match[3]);
+    assertQubit(control, numQubits, token);
+    assertQubit(swapA, numQubits, token);
+    assertQubit(swapB, numQubits, token);
+    assertDistinct([control, swapA, swapB], token);
+    return { kind: "cswap", control, swapA, swapB };
+  }
+
+  throw new Error(`Unsupported gate token: ${token}`);
 }
 
 /**
@@ -378,6 +509,155 @@ function applyCSWAP(state, numQubits, control, qa, qb) {
     const j = (i | qaMask) & ~qbMask;
     swapAmplitudes(state, i, j);
   }
+}
+
+/**
+ * @param {{ re: number, im: number }[]} state
+ * @param {number} numQubits
+ * @param {string} token
+ * @param {SimulationMapping | undefined} mapping
+ */
+export function applyGateToken(state, numQubits, token, mapping) {
+  const op = resolveGateOperation(token, numQubits, mapping);
+
+  if (op.kind === "single") {
+    applySingleQubitMatrix(state, numQubits, op.target, SINGLE_QUBIT_MATRICES[op.gate]);
+    return;
+  }
+  if (op.kind === "cx") {
+    applyControlledX(state, numQubits, op.control, op.target);
+    return;
+  }
+  if (op.kind === "cz") {
+    applyControlledZ(state, numQubits, op.control, op.target);
+    return;
+  }
+  if (op.kind === "swap") {
+    applySwap(state, numQubits, op.qa, op.qb);
+    return;
+  }
+  if (op.kind === "ccx") {
+    applyCCX(state, numQubits, op.control1, op.control2, op.target);
+    return;
+  }
+
+  applyCSWAP(state, numQubits, op.control, op.swapA, op.swapB);
+}
+
+/**
+ * @param {number} numQubits
+ * @param {string[]} tokens
+ * @param {SimulationMapping | undefined} mapping
+ * @returns {{ re: number, im: number }[]}
+ */
+export function simulateSequence(numQubits, tokens, mapping) {
+  const state = zeroState(numQubits);
+  for (const token of tokens) {
+    applyGateToken(state, numQubits, token, mapping);
+  }
+  return state;
+}
+
+/**
+ * @param {number} q
+ * @param {number} a
+ * @param {number} b
+ */
+function isStrictBetween(q, a, b) {
+  const min = Math.min(a, b);
+  const max = Math.max(a, b);
+  return q > min && q < max;
+}
+
+/**
+ * @param {number} q
+ * @param {number[]} qubits
+ */
+function isStrictBetweenRange(q, qubits) {
+  const min = Math.min(...qubits);
+  const max = Math.max(...qubits);
+  return q > min && q < max;
+}
+
+/**
+ * @param {string} marker
+ */
+function markerSegment(marker) {
+  return `--${marker}--`;
+}
+
+/**
+ * @param {string} gate
+ */
+function singleSegment(gate) {
+  return `-[${gate}]-`;
+}
+
+/**
+ * @param {GateOperation} op
+ * @param {number} qubit
+ */
+function circuitSegmentForQubit(op, qubit) {
+  if (op.kind === "single") {
+    return qubit === op.target ? singleSegment(op.gate) : WIRE_SEGMENT;
+  }
+
+  if (op.kind === "cx" || op.kind === "cz") {
+    if (qubit === op.control) {
+      return markerSegment("o");
+    }
+    if (qubit === op.target) {
+      return markerSegment(op.kind === "cx" ? "X" : "Z");
+    }
+    return isStrictBetween(qubit, op.control, op.target) ? markerSegment("|") : WIRE_SEGMENT;
+  }
+
+  if (op.kind === "swap") {
+    if (qubit === op.qa || qubit === op.qb) {
+      return markerSegment("x");
+    }
+    return isStrictBetween(qubit, op.qa, op.qb) ? markerSegment("|") : WIRE_SEGMENT;
+  }
+
+  if (op.kind === "ccx") {
+    if (qubit === op.control1 || qubit === op.control2) {
+      return markerSegment("o");
+    }
+    if (qubit === op.target) {
+      return markerSegment("X");
+    }
+    return isStrictBetweenRange(qubit, [op.control1, op.control2, op.target])
+      ? markerSegment("|")
+      : WIRE_SEGMENT;
+  }
+
+  if (qubit === op.control) {
+    return markerSegment("o");
+  }
+  if (qubit === op.swapA || qubit === op.swapB) {
+    return markerSegment("x");
+  }
+  return isStrictBetweenRange(qubit, [op.control, op.swapA, op.swapB])
+    ? markerSegment("|")
+    : WIRE_SEGMENT;
+}
+
+/**
+ * @param {string[]} tokens
+ * @param {number} numQubits
+ * @param {SimulationMapping | undefined} mapping
+ */
+export function formatCircuit(tokens, numQubits, mapping) {
+  const lines = Array.from({ length: numQubits }, (_, q) => `q${q}: `);
+
+  for (const token of tokens) {
+    const op = resolveGateOperation(token, numQubits, mapping);
+    for (let q = 0; q < numQubits; q += 1) {
+      lines[q] += `${circuitSegmentForQubit(op, q)} `;
+    }
+  }
+
+  return lines.join("\n");
 }
 
 /**

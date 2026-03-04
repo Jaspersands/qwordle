@@ -1,7 +1,12 @@
 import { evaluateGuess } from "./feedback.js";
 import { MAX_GUESSES, SEQUENCE_LENGTH } from "./gate-catalog.js";
 import {
+  mappingToSimulationToken,
+  normalizeTokenMapping,
+} from "./token-mapping.js";
+import {
   computeFidelity,
+  formatCircuit,
   formatTerms,
   roundFidelity,
   simulateSequence,
@@ -37,6 +42,8 @@ import {
  * @property {boolean} equivalent
  * @property {string} guessStateText
  * @property {string} targetStateText
+ * @property {string} guessCircuitText
+ * @property {string[]} mappings
  * @property {Array<{ basis: string, ket: string, amplitude: string, magnitude: number }>} guessTerms
  * @property {Array<{ basis: string, ket: string, amplitude: string, magnitude: number }>} targetTerms
  */
@@ -165,10 +172,49 @@ export function isGameComplete(gameState) {
 }
 
 /**
+ * @param {{ qubits: number }} modeConfig
+ * @param {string[]} guessTokens
+ * @param {string[]} answerTokens
+ * @param {string[] | undefined} guessMappings
+ */
+function buildSimulationDetails(modeConfig, guessTokens, answerTokens, guessMappings) {
+  const mappings = guessTokens.map((token, index) =>
+    normalizeTokenMapping(token, modeConfig.qubits, guessMappings?.[index]),
+  );
+  const guessSimulationTokens = guessTokens.map((token, index) =>
+    mappingToSimulationToken(token, modeConfig.qubits, mappings[index]),
+  );
+  const targetSimulationTokens = answerTokens.map((token) =>
+    mappingToSimulationToken(token, modeConfig.qubits, undefined),
+  );
+
+  const guessState = simulateSequence(modeConfig.qubits, guessSimulationTokens);
+  const targetState = simulateSequence(modeConfig.qubits, targetSimulationTokens);
+
+  const fidelity = roundFidelity(computeFidelity(guessState, targetState));
+  const guessTerms = stateToTerms(guessState, modeConfig.qubits);
+  const targetTerms = stateToTerms(targetState, modeConfig.qubits);
+  const guessStateText = formatTerms(guessTerms);
+  const targetStateText = formatTerms(targetTerms);
+  const guessCircuitText = formatCircuit(guessSimulationTokens, modeConfig.qubits);
+
+  return {
+    fidelity,
+    mappings,
+    guessTerms,
+    targetTerms,
+    guessStateText,
+    targetStateText,
+    guessCircuitText,
+  };
+}
+
+/**
  * @param {GameState} gameState
  * @param {{ qubits: number, tokens: string[] }} modeConfig
+ * @param {string[] | undefined} guessMappings
  */
-export function submitCurrentGuess(gameState, modeConfig) {
+export function submitCurrentGuess(gameState, modeConfig, guessMappings) {
   if (gameState.status !== "in_progress") {
     return { ok: false, error: "This puzzle is already complete." };
   }
@@ -192,20 +238,10 @@ export function submitCurrentGuess(gameState, modeConfig) {
   const answerTokens = gameState.puzzle.answerTokens;
   const { marks, won } = evaluateGuess(guessTokens, answerTokens);
 
-  let fidelity = 0;
-  let guessTerms = [];
-  let targetTerms = [];
-  let guessStateText = "";
-  let targetStateText = "";
+  let simulation;
 
   try {
-    const guessState = simulateSequence(modeConfig.qubits, guessTokens);
-    const targetState = simulateSequence(modeConfig.qubits, answerTokens);
-    fidelity = roundFidelity(computeFidelity(guessState, targetState));
-    guessTerms = stateToTerms(guessState, modeConfig.qubits);
-    targetTerms = stateToTerms(targetState, modeConfig.qubits);
-    guessStateText = formatTerms(guessTerms);
-    targetStateText = formatTerms(targetTerms);
+    simulation = buildSimulationDetails(modeConfig, guessTokens, answerTokens, guessMappings);
   } catch (error) {
     return {
       ok: false,
@@ -213,18 +249,20 @@ export function submitCurrentGuess(gameState, modeConfig) {
     };
   }
 
-  const equivalent = !won && Math.abs(1 - fidelity) < 1e-9;
+  const equivalent = !won && Math.abs(1 - simulation.fidelity) < 1e-9;
 
   const evaluation = {
     tokens: guessTokens,
     marks,
-    fidelity,
+    fidelity: simulation.fidelity,
     won,
     equivalent,
-    guessStateText,
-    targetStateText,
-    guessTerms,
-    targetTerms,
+    guessStateText: simulation.guessStateText,
+    targetStateText: simulation.targetStateText,
+    guessCircuitText: simulation.guessCircuitText,
+    mappings: simulation.mappings,
+    guessTerms: simulation.guessTerms,
+    targetTerms: simulation.targetTerms,
   };
 
   const nextGuesses = [...gameState.guesses, evaluation];
@@ -250,6 +288,47 @@ export function submitCurrentGuess(gameState, modeConfig) {
     evaluation,
     completedNow: gameState.status === "in_progress" && nextStatus !== "in_progress",
     gameState: nextState,
+  };
+}
+
+/**
+ * @param {GameState} gameState
+ * @param {{ qubits: number }} modeConfig
+ */
+export function refreshGuessSimulations(gameState, modeConfig) {
+  const answerTokens = gameState.puzzle.answerTokens;
+
+  const guesses = gameState.guesses.map((guess) => {
+    try {
+      const simulation = buildSimulationDetails(
+        modeConfig,
+        guess.tokens,
+        answerTokens,
+        Array.isArray(guess.mappings) ? guess.mappings : undefined,
+      );
+      const won = guess.marks.every((mark) => mark === "correct");
+      const equivalent = !won && Math.abs(1 - simulation.fidelity) < 1e-9;
+
+      return {
+        ...guess,
+        fidelity: simulation.fidelity,
+        won,
+        equivalent,
+        guessStateText: simulation.guessStateText,
+        targetStateText: simulation.targetStateText,
+        guessCircuitText: simulation.guessCircuitText,
+        mappings: simulation.mappings,
+        guessTerms: simulation.guessTerms,
+        targetTerms: simulation.targetTerms,
+      };
+    } catch {
+      return guess;
+    }
+  });
+
+  return {
+    ...gameState,
+    guesses,
   };
 }
 
