@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QWordle</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="backdrop"></div>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Quantum Gate Puzzle</p>
+          <h1>QWordle</h1>
+        </div>
+        <button id="stats-button" class="ghost-btn" type="button">Stats</button>
+      </header>
+
+      <section class="controls" aria-label="Game Controls">
+        <label>
+          Mode
+          <select id="mode-select">
+            <option value="beginner">Beginner</option>
+            <option value="mixed">Mixed</option>
+            <option value="advanced">Advanced</option>
+          </select>
+        </label>
+        <label>
+          Cadence
+          <select id="cadence-select">
+            <option value="daily">Daily</option>
+            <option value="random">Unlimited Random</option>
+          </select>
+        </label>
+        <button id="new-game-btn" type="button">New Puzzle</button>
+      </section>
+
+      <section class="status-strip" aria-live="polite">
+        <p id="status-message">Pick tokens from the keyboard to build your guess.</p>
+      </section>
+
+      <section class="board-wrap" aria-label="Board">
+        <div id="board" class="board"></div>
+        <div class="input-preview">
+          <span class="label">Current Guess</span>
+          <div id="current-input" class="current-input"></div>
+        </div>
+      </section>
+
+      <section class="actions" aria-label="Guess Actions">
+        <button id="backspace-btn" type="button" class="ghost-btn">Backspace</button>
+        <button id="clear-btn" type="button" class="ghost-btn">Clear</button>
+        <button id="submit-btn" type="button">Submit Guess</button>
+        <button id="share-btn" type="button" class="ghost-btn">Share</button>
+      </section>
+
+      <section class="keyboard-wrap" aria-label="Gate Token Keyboard">
+        <h2>Gate Keyboard</h2>
+        <div id="keyboard" class="keyboard"></div>
+      </section>
+
+      <section id="simulation-panel" class="simulation" aria-label="Simulation Insights">
+        <div class="sim-head">
+          <h2>Simulation Insights</h2>
+          <p id="fidelity-value">Fidelity: --</p>
+        </div>
+        <p id="equivalent-message" class="equivalent-message hidden">Quantum-equivalent state</p>
+        <div class="sim-grid">
+          <div>
+            <h3>Guess Final State</h3>
+            <pre id="guess-state">No guess submitted yet.</pre>
+          </div>
+          <div>
+            <h3>Target Final State</h3>
+            <pre id="target-state">No guess submitted yet.</pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="answer-section" class="answer hidden" aria-live="polite">
+        <p id="answer-reveal"></p>
+      </section>
+    </main>
+
+    <dialog id="stats-modal" class="stats-modal">
+      <div class="stats-head">
+        <h2>Stats</h2>
+        <button id="close-stats-btn" class="ghost-btn" type="button">Close</button>
+      </div>
+      <div id="stats-content" class="stats-content"></div>
+    </dialog>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
