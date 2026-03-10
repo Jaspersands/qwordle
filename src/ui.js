@@ -59,6 +59,8 @@ export function createUI(handlers) {
     guessState: mustGetElement("guess-state"),
     targetState: mustGetElement("target-state"),
     guessCircuit: mustGetElement("guess-circuit"),
+    qiskitStatus: mustGetElement("qiskit-status"),
+    blochSteps: mustGetElement("bloch-steps"),
     answerSection: mustGetElement("answer-section"),
     answerReveal: mustGetElement("answer-reveal"),
     backspaceButton: /** @type {HTMLButtonElement} */ (mustGetElement("backspace-btn")),
@@ -250,6 +252,65 @@ export function createUI(handlers) {
 
   /**
    * @param {{
+   *   status: 'idle' | 'loading' | 'ready' | 'error',
+   *   circuitSvg: string,
+   *   blochSteps: Array<{ step: number, label: string, image: string }>,
+   *   error: string,
+   * } | undefined} qiskitVisualization
+   * @param {string} fallbackCircuitText
+   */
+  function renderQiskitVisuals(qiskitVisualization, fallbackCircuitText) {
+    elements.guessCircuit.innerHTML = "";
+    elements.blochSteps.innerHTML = "";
+
+    if (!qiskitVisualization || qiskitVisualization.status === "idle") {
+      elements.qiskitStatus.textContent = "No guess submitted yet.";
+      return;
+    }
+
+    if (qiskitVisualization.status === "loading") {
+      elements.qiskitStatus.textContent = "Rendering with Qiskit...";
+      return;
+    }
+
+    if (qiskitVisualization.status === "error") {
+      elements.qiskitStatus.textContent = qiskitVisualization.error;
+
+      const fallback = document.createElement("pre");
+      fallback.className = "qiskit-fallback";
+      fallback.textContent = fallbackCircuitText;
+      elements.guessCircuit.appendChild(fallback);
+      return;
+    }
+
+    elements.qiskitStatus.textContent = "Rendered with Qiskit.";
+    const normalizedSvg = qiskitVisualization.circuitSvg
+      .replace(/<\?xml[\s\S]*?\?>/i, "")
+      .replace(/<!doctype[\s\S]*?>/i, "")
+      .trim();
+    elements.guessCircuit.innerHTML = normalizedSvg;
+
+    for (const step of qiskitVisualization.blochSteps) {
+      const card = document.createElement("figure");
+      card.className = "bloch-step";
+
+      const caption = document.createElement("figcaption");
+      caption.textContent = `Step ${step.step}: ${step.label}`;
+      card.appendChild(caption);
+
+      const image = document.createElement("img");
+      image.src = step.image;
+      image.alt = `Bloch sphere for step ${step.step}`;
+      image.loading = "lazy";
+      image.decoding = "async";
+      card.appendChild(image);
+
+      elements.blochSteps.appendChild(card);
+    }
+  }
+
+  /**
+   * @param {{
    *   settings: { mode: string, cadence: string },
    *   modeConfig: { qubits: number, tokens: string[], guideLines?: string[], tokenHints?: Record<string, string> },
    *   gameState: import('./game-engine.js').GameState,
@@ -257,6 +318,12 @@ export function createUI(handlers) {
    *   stats: import('./game-engine.js').Stats,
    *   message: string,
    *   targetStateText: string,
+   *   qiskitVisualization: {
+   *     status: 'idle' | 'loading' | 'ready' | 'error',
+   *     circuitSvg: string,
+   *     blochSteps: Array<{ step: number, label: string, image: string }>,
+   *     error: string,
+   *   },
    * }} viewModel
    */
   function render(viewModel) {
@@ -268,6 +335,7 @@ export function createUI(handlers) {
       stats,
       message,
       targetStateText,
+      qiskitVisualization,
     } = viewModel;
 
     elements.modeSelect.value = settings.mode;
@@ -283,7 +351,7 @@ export function createUI(handlers) {
       modeConfig.tokens,
       modeConfig.tokenHints ?? {},
       keyboardMarks,
-      gameState.status !== "in_progress",
+      false,
     );
     renderModeGuide(modeConfig.guideLines ?? []);
 
@@ -303,13 +371,16 @@ export function createUI(handlers) {
     if (gameState.guesses.length === 0) {
       elements.fidelityValue.textContent = "Fidelity: --";
       elements.guessState.textContent = "No guess submitted yet.";
-      elements.guessCircuit.textContent = "No guess submitted yet.";
+      renderQiskitVisuals(qiskitVisualization, "No guess submitted yet.");
       elements.equivalentMessage.classList.add("hidden");
     } else {
       const latest = gameState.guesses[gameState.guesses.length - 1];
       elements.fidelityValue.textContent = `Fidelity: ${latest.fidelity.toFixed(6)}`;
       elements.guessState.textContent = latest.guessStateText;
-      elements.guessCircuit.textContent = latest.guessCircuitText ?? "No guess submitted yet.";
+      renderQiskitVisuals(
+        qiskitVisualization,
+        latest.guessCircuitText ?? "No guess submitted yet.",
+      );
 
       if (latest.equivalent) {
         elements.equivalentMessage.classList.remove("hidden");

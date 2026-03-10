@@ -43,6 +43,7 @@ import {
  * @property {string} guessStateText
  * @property {string} targetStateText
  * @property {string} guessCircuitText
+ * @property {string[]} guessSimulationTokens
  * @property {string[]} mappings
  * @property {Array<{ basis: string, ket: string, amplitude: string, magnitude: number }>} guessTerms
  * @property {Array<{ basis: string, ket: string, amplitude: string, magnitude: number }>} targetTerms
@@ -200,6 +201,7 @@ function buildSimulationDetails(modeConfig, guessTokens, answerTokens, guessMapp
 
   return {
     fidelity,
+    guessSimulationTokens,
     mappings,
     guessTerms,
     targetTerms,
@@ -260,6 +262,7 @@ export function submitCurrentGuess(gameState, modeConfig, guessMappings) {
     guessStateText: simulation.guessStateText,
     targetStateText: simulation.targetStateText,
     guessCircuitText: simulation.guessCircuitText,
+    guessSimulationTokens: simulation.guessSimulationTokens,
     mappings: simulation.mappings,
     guessTerms: simulation.guessTerms,
     targetTerms: simulation.targetTerms,
@@ -317,6 +320,7 @@ export function refreshGuessSimulations(gameState, modeConfig) {
         guessStateText: simulation.guessStateText,
         targetStateText: simulation.targetStateText,
         guessCircuitText: simulation.guessCircuitText,
+        guessSimulationTokens: simulation.guessSimulationTokens,
         mappings: simulation.mappings,
         guessTerms: simulation.guessTerms,
         targetTerms: simulation.targetTerms,

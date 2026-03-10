@@ -35,8 +35,19 @@ import {
   normalizeTokenMapping,
 } from "./token-mapping.js";
 import { createUI } from "./ui.js";
+import { renderQiskitArtifacts } from "./qiskit-render-client.js";
 
 const SHARE_URL = "https://jaspersands.github.io/qwordle/";
+
+/**
+ * @typedef {{
+ *   status: 'idle' | 'loading' | 'ready' | 'error',
+ *   signature: string,
+ *   circuitSvg: string,
+ *   blochSteps: Array<{ step: number, label: string, image: string }>,
+ *   error: string,
+ * }} QiskitVisualization
+ */
 
 /**
  * @typedef {{
@@ -47,6 +58,7 @@ const SHARE_URL = "https://jaspersands.github.io/qwordle/";
  *   stats: import('./game-engine.js').Stats,
  *   message: string,
  *   targetStateText: string,
+ *   qiskitVisualization: QiskitVisualization,
  * }} AppState
  */
 
@@ -190,6 +202,52 @@ function refreshSimulationViews() {
 }
 
 /**
+ * @param {'idle' | 'loading' | 'ready' | 'error'} status
+ * @param {string} signature
+ * @param {string} error
+ */
+function createQiskitVisualization(status, signature = "", error = "") {
+  return {
+    status,
+    signature,
+    circuitSvg: "",
+    blochSteps: [],
+    error,
+  };
+}
+
+/**
+ * @param {import('./game-engine.js').GameState} gameState
+ * @param {ReturnType<typeof getModeConfig>} modeConfig
+ */
+function getLatestGuessSimulationTokens(gameState, modeConfig) {
+  if (gameState.guesses.length === 0) {
+    return null;
+  }
+
+  const latest = gameState.guesses[gameState.guesses.length - 1];
+  if (Array.isArray(latest.guessSimulationTokens) && latest.guessSimulationTokens.length > 0) {
+    return latest.guessSimulationTokens;
+  }
+
+  return latest.tokens.map((token, index) =>
+    mappingToSimulationToken(
+      token,
+      modeConfig.qubits,
+      Array.isArray(latest.mappings) ? latest.mappings[index] : undefined,
+    ),
+  );
+}
+
+/**
+ * @param {number} numQubits
+ * @param {string[]} tokens
+ */
+function qiskitSignature(numQubits, tokens) {
+  return `${numQubits}:${tokens.join("|")}`;
+}
+
+/**
  * @param {import('./gate-catalog.js').ModeId} mode
  * @param {import('./gate-catalog.js').Cadence} cadence
  * @param {boolean} forceNew
@@ -230,6 +288,7 @@ const mode = isMode(initialSettings.mode) ? initialSettings.mode : DEFAULT_MODE;
 const cadence = isCadence(initialSettings.cadence) ? initialSettings.cadence : DEFAULT_CADENCE;
 const initialModeConfig = getModeConfig(mode);
 const initialGameState = resolveGame(mode, cadence);
+let qiskitRequestId = 0;
 
 /** @type {AppState} */
 const state = {
@@ -243,11 +302,62 @@ const state = {
   stats: loadStats(mode, cadence),
   message: "",
   targetStateText: "",
+  qiskitVisualization: createQiskitVisualization("idle"),
 };
 state.targetStateText = computeTargetStateText(state.modeConfig, state.gameState);
 
 saveSettings(state.settings);
 saveGame(state.gameState);
+
+function syncQiskitVisualization() {
+  const simulationTokens = getLatestGuessSimulationTokens(state.gameState, state.modeConfig);
+  if (!simulationTokens) {
+    if (state.qiskitVisualization.status !== "idle") {
+      qiskitRequestId += 1;
+      state.qiskitVisualization = createQiskitVisualization("idle");
+      render();
+    }
+    return;
+  }
+
+  const signature = qiskitSignature(state.modeConfig.qubits, simulationTokens);
+  if (
+    state.qiskitVisualization.signature === signature &&
+    state.qiskitVisualization.status !== "idle"
+  ) {
+    return;
+  }
+
+  const currentRequestId = qiskitRequestId + 1;
+  qiskitRequestId = currentRequestId;
+  state.qiskitVisualization = createQiskitVisualization("loading", signature);
+  render();
+
+  void renderQiskitArtifacts(state.modeConfig.qubits, simulationTokens).then((result) => {
+    if (currentRequestId !== qiskitRequestId) {
+      return;
+    }
+
+    if (!result.ok) {
+      state.qiskitVisualization = createQiskitVisualization(
+        "error",
+        signature,
+        `${result.error} Start \`npm run qiskit-renderer\` and open \`http://127.0.0.1:8765/\` to enable Qiskit drawings.`,
+      );
+      render();
+      return;
+    }
+
+    state.qiskitVisualization = {
+      status: "ready",
+      signature,
+      circuitSvg: result.data.circuitSvg,
+      blochSteps: result.data.blochSteps,
+      error: "",
+    };
+    render();
+  });
+}
 
 const ui = createUI({
   onModeChange(nextMode) {
@@ -450,7 +560,9 @@ function render() {
     stats: state.stats,
     message: state.message,
     targetStateText: state.targetStateText,
+    qiskitVisualization: state.qiskitVisualization,
   });
+  syncQiskitVisualization();
 }
 
 render();

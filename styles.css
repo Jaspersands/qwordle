@@ -300,6 +300,68 @@ button:disabled {
   margin: 0 0 0.4rem;
 }
 
+.qiskit-status {
+  margin: 0 0 0.5rem;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.86rem;
+}
+
+.qiskit-circuit,
+.qiskit-fallback {
+  margin: 0;
+  padding: 0.75rem;
+  border-radius: 10px;
+  background: #f8fbfb;
+  border: 1px solid var(--border);
+  color: #1f2f33;
+  min-height: 5.8rem;
+  overflow-x: auto;
+  font-size: 0.84rem;
+}
+
+.qiskit-circuit svg {
+  display: block;
+  max-width: none;
+  height: auto;
+}
+
+.sim-bloch {
+  margin-top: 0.75rem;
+}
+
+.sim-bloch h3 {
+  margin: 0 0 0.4rem;
+}
+
+.bloch-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.6rem;
+}
+
+.bloch-step {
+  margin: 0;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #f8fbfb;
+  padding: 0.5rem;
+}
+
+.bloch-step figcaption {
+  margin-bottom: 0.35rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.bloch-step img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 8px;
+}
+
 pre {
   margin: 0;
   padding: 0.75rem;

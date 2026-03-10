@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <title>QWordle</title>
-    <link rel="stylesheet" href="./styles.css?v=20260304b" />
+    <link rel="stylesheet" href="./styles.css?v=20260309q" />
   </head>
   <body>
     <div class="backdrop"></div>
@@ -76,12 +76,12 @@
       <section class="keyboard-wrap" aria-label="Gate Token Keyboard">
         <h2>Gate Keyboard</h2>
         <div id="keyboard" class="keyboard">
-          <button class="key-btn" type="button" disabled>X</button>
-          <button class="key-btn" type="button" disabled>Y</button>
-          <button class="key-btn" type="button" disabled>Z</button>
-          <button class="key-btn" type="button" disabled>H</button>
-          <button class="key-btn" type="button" disabled>S</button>
-          <button class="key-btn" type="button" disabled>T</button>
+          <button class="key-btn" type="button">X</button>
+          <button class="key-btn" type="button">Y</button>
+          <button class="key-btn" type="button">Z</button>
+          <button class="key-btn" type="button">H</button>
+          <button class="key-btn" type="button">S</button>
+          <button class="key-btn" type="button">T</button>
         </div>
         <div id="mode-guide" class="mode-guide"></div>
       </section>
@@ -103,8 +103,13 @@
           </div>
         </div>
         <div class="sim-circuit">
-          <h3>Most Recent Guess Circuit</h3>
-          <pre id="guess-circuit">No guess submitted yet.</pre>
+          <h3>Most Recent Guess Circuit (Qiskit)</h3>
+          <p id="qiskit-status" class="qiskit-status">No guess submitted yet.</p>
+          <div id="guess-circuit" class="qiskit-circuit"></div>
+        </div>
+        <div class="sim-bloch">
+          <h3>Bloch Spheres by Step (Qiskit)</h3>
+          <div id="bloch-steps" class="bloch-steps"></div>
         </div>
       </section>
 
@@ -129,6 +134,13 @@
       <div id="stats-content" class="stats-content"></div>
     </dialog>
 
-    <script type="module" src="./src/main.js?v=20260304b"></script>
+    <script type="module">
+      import("./src/main.js?v=20260309q").catch((error) => {
+        const status = document.getElementById("status-message");
+        if (status) {
+          status.textContent = `App failed to load: ${error?.message ?? "Unknown error"}`;
+        }
+      });
+    </script>
   </body>
 </html>
