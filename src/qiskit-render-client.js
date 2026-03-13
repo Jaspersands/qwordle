@@ -1,7 +1,7 @@
 const DEFAULT_RENDER_ENDPOINT = "http://127.0.0.1:8765/render";
 const RENDER_TIMEOUT_MS = 15000;
 
-/** @type {Map<string, { circuitSvg: string, blochSteps: Array<{ step: number, label: string, image: string }> }>} */
+/** @type {Map<string, { circuitSvg: string, blochSteps: Array<{ step: number, gate: string, label: string, stateText: string, image: string, qubitImages: Array<{ qubit: number, image: string }> }> }>} */
 const renderCache = new Map();
 
 /**
@@ -118,19 +118,32 @@ function isValidPayload(payload) {
     return false;
   }
 
-  return candidate.blochSteps.every(
+  const hasValidSteps = candidate.blochSteps.every(
     (entry) => {
       if (!entry || typeof entry !== "object") {
         return false;
       }
-      const candidateEntry = /** @type {{ step?: unknown, label?: unknown, image?: unknown }} */ (entry);
+      const candidateEntry = /** @type {{ step?: unknown, gate?: unknown, label?: unknown, stateText?: unknown, image?: unknown, qubitImages?: unknown }} */ (entry);
+      const hasQubitImages =
+        Array.isArray(candidateEntry.qubitImages) &&
+        candidateEntry.qubitImages.every(
+          (qubitImage) =>
+            qubitImage &&
+            typeof qubitImage === "object" &&
+            Number.isInteger(/** @type {{ qubit?: unknown }} */ (qubitImage).qubit) &&
+            typeof /** @type {{ image?: unknown }} */ (qubitImage).image === "string",
+        );
       return (
         Number.isInteger(candidateEntry.step) &&
+        typeof candidateEntry.gate === "string" &&
         typeof candidateEntry.label === "string" &&
-        typeof candidateEntry.image === "string"
+        typeof candidateEntry.stateText === "string" &&
+        typeof candidateEntry.image === "string" &&
+        hasQubitImages
       );
     },
   );
+  return hasValidSteps;
 }
 
 /**

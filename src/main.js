@@ -44,7 +44,14 @@ const SHARE_URL = "https://jaspersands.github.io/qwordle/";
  *   status: 'idle' | 'loading' | 'ready' | 'error',
  *   signature: string,
  *   circuitSvg: string,
- *   blochSteps: Array<{ step: number, label: string, image: string }>,
+ *   blochSteps: Array<{
+ *     step: number,
+ *     gate: string,
+ *     label: string,
+ *     stateText: string,
+ *     image: string,
+ *     qubitImages: Array<{ qubit: number, image: string }>,
+ *   }>,
  *   error: string,
  * }} QiskitVisualization
  */
@@ -540,6 +547,14 @@ const ui = createUI({
 
     saveGame(state.gameState);
     render();
+  },
+
+  onOpenHelp() {
+    ui.openHelpModal();
+  },
+
+  onCloseHelp() {
+    ui.closeHelpModal();
   },
 
   onOpenStats() {

@@ -69,6 +69,11 @@ body {
   padding: 1rem 1.2rem;
 }
 
+.topbar-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
 .eyebrow {
   margin: 0;
   color: var(--muted);
@@ -336,30 +341,75 @@ button:disabled {
 
 .bloch-steps {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 0.6rem;
+  grid-template-columns: 1fr;
+  gap: 0.8rem;
 }
 
 .bloch-step {
   margin: 0;
+  display: grid;
+  grid-template-columns: minmax(380px, 1.8fr) minmax(260px, 1fr);
+  align-items: start;
+  gap: 0.7rem;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: #f8fbfb;
-  padding: 0.5rem;
+  padding: 0.75rem;
 }
 
-.bloch-step figcaption {
-  margin-bottom: 0.35rem;
+.bloch-step-title {
+  margin: 0 0 0.45rem;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   font-weight: 600;
 }
 
-.bloch-step img {
+.bloch-qubit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.4rem;
+}
+
+.bloch-qubit-card {
+  margin: 0;
+  padding: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.bloch-qubit-card figcaption {
+  margin: 0 0 0.15rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.bloch-qubit-card img {
   width: 100%;
+  max-width: 220px;
   height: auto;
   display: block;
-  border-radius: 8px;
+  margin: 0 auto;
+}
+
+.bloch-step-details {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.bloch-step-gate {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.bloch-step-state {
+  margin: 0;
+  min-height: 6.2rem;
+  font-size: 0.8rem;
+  line-height: 1.25;
 }
 
 pre {
@@ -401,7 +451,19 @@ pre {
   padding: 1rem;
 }
 
+.help-modal {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  width: min(980px, 96vw);
+  padding: 1rem;
+}
+
 .stats-modal::backdrop {
+  background: rgba(10, 20, 23, 0.35);
+}
+
+.help-modal::backdrop {
   background: rgba(10, 20, 23, 0.35);
 }
 
@@ -410,6 +472,81 @@ pre {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 0.7rem;
+}
+
+.help-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.8rem;
+}
+
+.help-content {
+  max-height: min(74vh, 860px);
+  overflow-y: auto;
+  display: grid;
+  gap: 1rem;
+  padding-right: 0.25rem;
+}
+
+.help-section {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fafdfd;
+  padding: 0.8rem;
+}
+
+.help-section h3 {
+  margin: 0 0 0.45rem;
+}
+
+.help-section p {
+  margin: 0 0 0.45rem;
+  color: #25353a;
+}
+
+.help-section ol {
+  margin: 0 0 0.5rem;
+  padding-left: 1.2rem;
+}
+
+.help-section li + li {
+  margin-top: 0.25rem;
+}
+
+.help-example,
+.help-matrix {
+  margin: 0;
+  min-height: 0;
+  font-family: "IBM Plex Mono", "Menlo", monospace;
+  font-size: 0.8rem;
+  line-height: 1.28;
+  white-space: pre;
+  background: #f6fafb;
+  border: 1px solid var(--border);
+}
+
+.help-gates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.help-gate-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  padding: 0.65rem;
+}
+
+.help-gate-card h4 {
+  margin: 0 0 0.3rem;
+}
+
+.help-gate-card p {
+  margin: 0 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.84rem;
 }
 
 .stats-grid {
@@ -474,5 +611,17 @@ pre {
 
   .stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .help-gates {
+    grid-template-columns: 1fr;
+  }
+
+  .bloch-step {
+    grid-template-columns: 1fr;
+  }
+
+  .bloch-qubit-grid {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   }
 }

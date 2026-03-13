@@ -20,8 +20,8 @@ matplotlib.use("Agg")
 
 from matplotlib import pyplot as plt
 from qiskit import QuantumCircuit
-from qiskit.quantum_info import Statevector
-from qiskit.visualization import plot_bloch_multivector
+from qiskit.quantum_info import DensityMatrix, Statevector, partial_trace
+from qiskit.visualization import plot_bloch_vector
 
 MAX_BODY_BYTES = 128_000
 MAX_TOKEN_COUNT = 64
@@ -135,13 +135,74 @@ def circuit_svg(qc: QuantumCircuit) -> str:
     return stream.getvalue()
 
 
-def bloch_data_url(state: Statevector) -> str:
-    figure = plot_bloch_multivector(state)
+def _format_number(value: float, decimals: int = 3) -> str:
+    rounded = round(value, decimals)
+    if abs(rounded) < 10 ** (-decimals):
+        rounded = 0.0
+    return f"{rounded:.{decimals}f}"
+
+
+def _format_complex(value: complex, decimals: int = 3) -> str:
+    re_part = value.real
+    im_part = value.imag
+    has_re = abs(re_part) >= 10 ** (-decimals)
+    has_im = abs(im_part) >= 10 ** (-decimals)
+
+    if not has_re and not has_im:
+        return "0"
+    if has_re and not has_im:
+        return _format_number(re_part, decimals)
+    if not has_re and has_im:
+        return f"{_format_number(im_part, decimals)}i"
+    sign = "+" if im_part >= 0 else "-"
+    return f"{_format_number(re_part, decimals)} {sign} {_format_number(abs(im_part), decimals)}i"
+
+
+def state_text(state: Statevector, num_qubits: int, epsilon: float = 1e-6, max_terms: int = 8) -> str:
+    threshold = epsilon * epsilon
+    terms: list[tuple[float, str, complex]] = []
+
+    for index, amplitude in enumerate(state.data):
+        magnitude_sq = float((amplitude.real * amplitude.real) + (amplitude.imag * amplitude.imag))
+        if magnitude_sq <= threshold:
+            continue
+        basis = format(index, f"0{num_qubits}b")
+        terms.append((magnitude_sq, basis, amplitude))
+
+    terms.sort(key=lambda item: (-item[0], item[1]))
+    selected = terms[:max_terms]
+    if not selected:
+        return "0"
+
+    lines = [f"{_format_complex(amplitude)} |{basis}>" for _, basis, amplitude in selected]
+    return "\n".join(lines)
+
+
+def _save_figure_to_data_url(figure: Any, dpi: int = 200) -> str:
     stream = io.BytesIO()
-    figure.savefig(stream, format="png", dpi=140, bbox_inches="tight")
+    figure.savefig(stream, format="png", dpi=dpi, bbox_inches="tight", pad_inches=0.04)
     plt.close(figure)
     encoded = base64.b64encode(stream.getvalue()).decode("ascii")
     return f"data:image/png;base64,{encoded}"
+
+
+def _bloch_vector_for_qubit(state: Statevector, num_qubits: int, qubit: int) -> list[float]:
+    dm = DensityMatrix(state)
+    traced_out = [idx for idx in range(num_qubits) if idx != qubit]
+    reduced = partial_trace(dm, traced_out).data
+
+    rho_01 = complex(reduced[0, 1])
+    x = 2.0 * rho_01.real
+    y = 2.0 * rho_01.imag
+    z = float(reduced[0, 0].real - reduced[1, 1].real)
+    return [x, y, z]
+
+
+def _single_qubit_bloch_image(state: Statevector, num_qubits: int, qubit: int) -> str:
+    bloch_vector = _bloch_vector_for_qubit(state, num_qubits, qubit)
+    figure = plot_bloch_vector(bloch_vector, title=f"q{qubit}")
+    figure.set_size_inches(4.4, 4.4)
+    return _save_figure_to_data_url(figure, dpi=220)
 
 
 def render_payload(num_qubits: int, tokens: list[str]) -> dict[str, Any]:
@@ -163,13 +224,22 @@ def render_payload(num_qubits: int, tokens: list[str]) -> dict[str, Any]:
     for step_index, state in enumerate(states):
         if step_index == 0:
             label = f"Start |{'0' * num_qubits}>"
+            gate = "INIT"
         else:
-            label = f"After {tokens[step_index - 1]}"
+            gate = tokens[step_index - 1]
+            label = f"After {gate}"
         bloch_steps.append(
             {
                 "step": step_index,
+                "gate": gate,
                 "label": label,
-                "image": bloch_data_url(state),
+                "stateText": state_text(state, num_qubits),
+                "qubitImages": [
+                    {"qubit": qubit, "image": _single_qubit_bloch_image(state, num_qubits, qubit)}
+                    for qubit in range(num_qubits)
+                ],
+                # Backwards-compatible field.
+                "image": _single_qubit_bloch_image(state, num_qubits, 0),
             }
         )
 

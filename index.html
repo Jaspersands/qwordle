@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <title>QWordle</title>
-    <link rel="stylesheet" href="./styles.css?v=20260309q" />
+    <link rel="stylesheet" href="./styles.css?v=20260311c" />
   </head>
   <body>
     <div class="backdrop"></div>
@@ -17,7 +17,10 @@
           <p class="eyebrow">Quantum Gate Puzzle</p>
           <h1>QWordle</h1>
         </div>
-        <button id="stats-button" class="ghost-btn" type="button">Stats</button>
+        <div class="topbar-actions">
+          <button id="help-button" class="ghost-btn" type="button">Help</button>
+          <button id="stats-button" class="ghost-btn" type="button">Stats</button>
+        </div>
       </header>
 
       <section class="controls" aria-label="Game Controls">
@@ -126,6 +129,127 @@
       </section>
     </main>
 
+    <dialog id="help-modal" class="help-modal">
+      <div class="help-head">
+        <h2>How To Play</h2>
+        <button id="close-help-btn" class="ghost-btn" type="button">Close</button>
+      </div>
+      <div class="help-content">
+        <section class="help-section">
+          <h3>Objective</h3>
+          <p>Find the hidden 5-gate circuit in 6 guesses. Each guess must use valid gates for the selected mode.</p>
+          <ol>
+            <li>Build a guess from the gate keyboard.</li>
+            <li>In 2/3 qubit modes, click a pending tile to cycle qubit mappings (target/control/swap indices).</li>
+            <li>Submit the guess and use tile feedback plus simulation insights to refine your next guess.</li>
+            <li>Win by matching the exact 5-token sequence in order.</li>
+          </ol>
+          <p>Feedback colors: green = correct token in correct slot, yellow = token exists in another slot, gray = token not in the answer.</p>
+          <p>The simulation panel shows fidelity, final state terms, Qiskit circuit drawing, and Bloch-sphere evolution by step.</p>
+        </section>
+
+        <section class="help-section">
+          <h3>Worked Example</h3>
+          <p>Suppose the hidden answer is <code>H0 CX01 T0 X1 Z0</code>.</p>
+          <pre class="help-example">Guess:     H0 CZ01 T0 X1 Z0
+Feedback:  correct | absent | correct | correct | correct
+Reason:    only the 2nd gate is wrong (CZ01 vs CX01)</pre>
+          <p>Your next guess should keep slots 1, 3, 4, 5 and replace slot 2. Fidelity and Bloch spheres can still reveal closeness even when token order is not solved yet.</p>
+        </section>
+
+        <section class="help-section">
+          <h3>Gate Reference + Matrices</h3>
+          <p>Matrices are shown in the standard computational basis. Single-qubit basis is <code>|0&gt;, |1&gt;</code>. Two-qubit basis is <code>|00&gt;, |01&gt;, |10&gt;, |11&gt;</code>. Three-qubit basis is <code>|000&gt;..|111&gt;</code>.</p>
+          <div class="help-gates">
+            <article class="help-gate-card">
+              <h4>X (Pauli-X)</h4>
+              <p>Bit flip.</p>
+              <pre class="help-matrix">[ [0, 1],
+  [1, 0] ]</pre>
+            </article>
+            <article class="help-gate-card">
+              <h4>Y (Pauli-Y)</h4>
+              <p>Bit+phase rotation.</p>
+              <pre class="help-matrix">[ [0, -i],
+  [i,  0] ]</pre>
+            </article>
+            <article class="help-gate-card">
+              <h4>Z (Pauli-Z)</h4>
+              <p>Phase flip.</p>
+              <pre class="help-matrix">[ [ 1, 0],
+  [ 0,-1] ]</pre>
+            </article>
+            <article class="help-gate-card">
+              <h4>H (Hadamard)</h4>
+              <p>Creates/undoes equal superposition.</p>
+              <pre class="help-matrix">(1/sqrt(2)) * [ [ 1,  1],
+                [ 1, -1] ]</pre>
+            </article>
+            <article class="help-gate-card">
+              <h4>S (Phase)</h4>
+              <p>Applies +90 degree phase to <code>|1&gt;</code>.</p>
+              <pre class="help-matrix">[ [1, 0],
+  [0, i] ]</pre>
+            </article>
+            <article class="help-gate-card">
+              <h4>T (pi/8)</h4>
+              <p>Applies +45 degree phase to <code>|1&gt;</code>.</p>
+              <pre class="help-matrix">[ [1, 0],
+  [0, exp(i*pi/4)] ]</pre>
+            </article>
+            <article class="help-gate-card">
+              <h4>CX (Controlled-X)</h4>
+              <p>Flip target when control is <code>|1&gt;</code>.</p>
+              <pre class="help-matrix">[ [1,0,0,0],
+  [0,1,0,0],
+  [0,0,0,1],
+  [0,0,1,0] ]</pre>
+            </article>
+            <article class="help-gate-card">
+              <h4>CZ (Controlled-Z)</h4>
+              <p>Apply phase flip to <code>|11&gt;</code>.</p>
+              <pre class="help-matrix">[ [1,0,0,0],
+  [0,1,0,0],
+  [0,0,1,0],
+  [0,0,0,-1] ]</pre>
+            </article>
+            <article class="help-gate-card">
+              <h4>SWAP</h4>
+              <p>Exchange two qubits.</p>
+              <pre class="help-matrix">[ [1,0,0,0],
+  [0,0,1,0],
+  [0,1,0,0],
+  [0,0,0,1] ]</pre>
+            </article>
+            <article class="help-gate-card">
+              <h4>CCX (Toffoli)</h4>
+              <p>Flip target when both controls are <code>|1&gt;</code>.</p>
+              <pre class="help-matrix">[ [1,0,0,0,0,0,0,0],
+  [0,1,0,0,0,0,0,0],
+  [0,0,1,0,0,0,0,0],
+  [0,0,0,1,0,0,0,0],
+  [0,0,0,0,1,0,0,0],
+  [0,0,0,0,0,1,0,0],
+  [0,0,0,0,0,0,0,1],
+  [0,0,0,0,0,0,1,0] ]</pre>
+            </article>
+            <article class="help-gate-card">
+              <h4>CSWAP (Fredkin)</h4>
+              <p>Swap two targets when control is <code>|1&gt;</code>.</p>
+              <pre class="help-matrix">[ [1,0,0,0,0,0,0,0],
+  [0,1,0,0,0,0,0,0],
+  [0,0,1,0,0,0,0,0],
+  [0,0,0,1,0,0,0,0],
+  [0,0,0,0,1,0,0,0],
+  [0,0,0,0,0,0,1,0],
+  [0,0,0,0,0,1,0,0],
+  [0,0,0,0,0,0,0,1] ]</pre>
+            </article>
+          </div>
+        </section>
+      </div>
+    </dialog>
+
     <dialog id="stats-modal" class="stats-modal">
       <div class="stats-head">
         <h2>Stats</h2>
@@ -135,7 +259,7 @@
     </dialog>
 
     <script type="module">
-      import("./src/main.js?v=20260309q").catch((error) => {
+      import("./src/main.js?v=20260311c").catch((error) => {
         const status = document.getElementById("status-message");
         if (status) {
           status.textContent = `App failed to load: ${error?.message ?? "Unknown error"}`;

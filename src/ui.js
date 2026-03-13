@@ -41,6 +41,8 @@ export function deriveKeyboardMarks(guesses) {
  *   onShare: () => void,
  *   onBoardCellClick: (index: number) => void,
  *   onNewPuzzle: () => void,
+ *   onOpenHelp: () => void,
+ *   onCloseHelp: () => void,
  *   onOpenStats: () => void,
  *   onCloseStats: () => void,
  * }} handlers
@@ -67,6 +69,9 @@ export function createUI(handlers) {
     clearButton: /** @type {HTMLButtonElement} */ (mustGetElement("clear-btn")),
     submitButton: /** @type {HTMLButtonElement} */ (mustGetElement("submit-btn")),
     shareButton: /** @type {HTMLButtonElement} */ (mustGetElement("share-btn")),
+    helpButton: /** @type {HTMLButtonElement} */ (mustGetElement("help-button")),
+    helpModal: /** @type {HTMLDialogElement} */ (mustGetElement("help-modal")),
+    closeHelpButton: /** @type {HTMLButtonElement} */ (mustGetElement("close-help-btn")),
     statsButton: /** @type {HTMLButtonElement} */ (mustGetElement("stats-button")),
     statsModal: /** @type {HTMLDialogElement} */ (mustGetElement("stats-modal")),
     closeStatsButton: /** @type {HTMLButtonElement} */ (mustGetElement("close-stats-btn")),
@@ -120,8 +125,23 @@ export function createUI(handlers) {
   elements.submitButton.addEventListener("click", handlers.onSubmit);
   elements.shareButton.addEventListener("click", handlers.onShare);
   elements.newGameButton.addEventListener("click", handlers.onNewPuzzle);
+  elements.helpButton.addEventListener("click", handlers.onOpenHelp);
+  elements.closeHelpButton.addEventListener("click", handlers.onCloseHelp);
   elements.statsButton.addEventListener("click", handlers.onOpenStats);
   elements.closeStatsButton.addEventListener("click", handlers.onCloseStats);
+
+  elements.helpModal.addEventListener("click", (event) => {
+    const rect = elements.helpModal.getBoundingClientRect();
+    const isInDialog =
+      rect.top <= event.clientY &&
+      event.clientY <= rect.top + rect.height &&
+      rect.left <= event.clientX &&
+      event.clientX <= rect.left + rect.width;
+
+    if (!isInDialog) {
+      handlers.onCloseHelp();
+    }
+  });
 
   elements.statsModal.addEventListener("click", (event) => {
     const rect = elements.statsModal.getBoundingClientRect();
@@ -254,7 +274,14 @@ export function createUI(handlers) {
    * @param {{
    *   status: 'idle' | 'loading' | 'ready' | 'error',
    *   circuitSvg: string,
-   *   blochSteps: Array<{ step: number, label: string, image: string }>,
+   *   blochSteps: Array<{
+   *     step: number,
+   *     gate: string,
+   *     label: string,
+   *     stateText: string,
+   *     image: string,
+   *     qubitImages: Array<{ qubit: number, image: string }>,
+   *   }>,
    *   error: string,
    * } | undefined} qiskitVisualization
    * @param {string} fallbackCircuitText
@@ -291,19 +318,58 @@ export function createUI(handlers) {
     elements.guessCircuit.innerHTML = normalizedSvg;
 
     for (const step of qiskitVisualization.blochSteps) {
-      const card = document.createElement("figure");
+      const card = document.createElement("article");
       card.className = "bloch-step";
 
-      const caption = document.createElement("figcaption");
-      caption.textContent = `Step ${step.step}: ${step.label}`;
-      card.appendChild(caption);
+      const visual = document.createElement("div");
+      visual.className = "bloch-step-visual";
 
-      const image = document.createElement("img");
-      image.src = step.image;
-      image.alt = `Bloch sphere for step ${step.step}`;
-      image.loading = "lazy";
-      image.decoding = "async";
-      card.appendChild(image);
+      const title = document.createElement("p");
+      title.className = "bloch-step-title";
+      title.textContent = `Step ${step.step}: ${step.label}`;
+      visual.appendChild(title);
+
+      const qubitGrid = document.createElement("div");
+      qubitGrid.className = "bloch-qubit-grid";
+
+      const qubitImages =
+        Array.isArray(step.qubitImages) && step.qubitImages.length > 0
+          ? step.qubitImages
+          : [{ qubit: 0, image: step.image }];
+
+      for (const qubitImage of qubitImages) {
+        const qubitCard = document.createElement("figure");
+        qubitCard.className = "bloch-qubit-card";
+
+        const qubitLabel = document.createElement("figcaption");
+        qubitLabel.textContent = `q${qubitImage.qubit}`;
+        qubitCard.appendChild(qubitLabel);
+
+        const image = document.createElement("img");
+        image.src = qubitImage.image;
+        image.alt = `Bloch sphere for step ${step.step}, qubit ${qubitImage.qubit}`;
+        image.loading = "lazy";
+        image.decoding = "async";
+        qubitCard.appendChild(image);
+        qubitGrid.appendChild(qubitCard);
+      }
+      visual.appendChild(qubitGrid);
+
+      const details = document.createElement("div");
+      details.className = "bloch-step-details";
+
+      const gate = document.createElement("p");
+      gate.className = "bloch-step-gate";
+      gate.textContent = `Gate Applied: ${step.gate}`;
+      details.appendChild(gate);
+
+      const state = document.createElement("pre");
+      state.className = "bloch-step-state";
+      state.textContent = step.stateText || "State unavailable.";
+      details.appendChild(state);
+
+      card.appendChild(visual);
+      card.appendChild(details);
 
       elements.blochSteps.appendChild(card);
     }
@@ -321,7 +387,14 @@ export function createUI(handlers) {
    *   qiskitVisualization: {
    *     status: 'idle' | 'loading' | 'ready' | 'error',
    *     circuitSvg: string,
-   *     blochSteps: Array<{ step: number, label: string, image: string }>,
+   *     blochSteps: Array<{
+   *       step: number,
+   *       gate: string,
+   *       label: string,
+   *       stateText: string,
+   *       image: string,
+   *       qubitImages: Array<{ qubit: number, image: string }>,
+   *     }>,
    *     error: string,
    *   },
    * }} viewModel
@@ -409,6 +482,18 @@ export function createUI(handlers) {
     }
   }
 
+  function openHelpModal() {
+    if (!elements.helpModal.open) {
+      elements.helpModal.showModal();
+    }
+  }
+
+  function closeHelpModal() {
+    if (elements.helpModal.open) {
+      elements.helpModal.close();
+    }
+  }
+
   function closeStatsModal() {
     if (elements.statsModal.open) {
       elements.statsModal.close();
@@ -417,6 +502,8 @@ export function createUI(handlers) {
 
   return {
     render,
+    openHelpModal,
+    closeHelpModal,
     openStatsModal,
     closeStatsModal,
   };
