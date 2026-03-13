@@ -9,6 +9,7 @@ import { createEmptyStats } from "./game-engine.js";
 
 const ROOT = `qwordle:${APP_STORAGE_VERSION}`;
 const SETTINGS_KEY = `${ROOT}:settings`;
+const GLOBAL_STATS_KEY = `${ROOT}:stats:global`;
 
 const inMemoryFallback = (() => {
   const data = new Map();
@@ -157,14 +158,74 @@ function sanitizeStats(stats) {
 }
 
 /**
+ * @param {import('./game-engine.js').Stats} base
+ * @param {import('./game-engine.js').Stats} next
+ */
+function mergeStats(base, next) {
+  return {
+    played: base.played + next.played,
+    won: base.won + next.won,
+    currentStreak: Math.max(base.currentStreak, next.currentStreak),
+    maxStreak: Math.max(base.maxStreak, next.maxStreak),
+    guessDistribution: base.guessDistribution.map((count, index) => count + next.guessDistribution[index]),
+  };
+}
+
+/**
+ * @param {Storage} store
+ */
+function loadLegacyStatsAggregate(store) {
+  if (typeof store.length !== "number" || typeof store.key !== "function") {
+    return null;
+  }
+
+  let found = false;
+  let merged = createEmptyStats();
+
+  for (let index = 0; index < store.length; index += 1) {
+    const key = store.key(index);
+    if (!key || !key.startsWith(`${ROOT}:stats:`) || key === GLOBAL_STATS_KEY) {
+      continue;
+    }
+
+    const parsed = parseJson(store.getItem(key));
+    if (!parsed || typeof parsed !== "object") {
+      continue;
+    }
+
+    found = true;
+    merged = mergeStats(merged, sanitizeStats(parsed));
+  }
+
+  return found ? merged : null;
+}
+
+/**
  * @param {string} mode
  * @param {string} cadence
  * @param {Storage} [store]
  */
 export function loadStats(mode, cadence, store) {
   const resolvedStore = getStore(store);
-  const parsed = parseJson(resolvedStore.getItem(getStatsKey(mode, cadence)));
-  return sanitizeStats(parsed);
+  const globalParsed = parseJson(resolvedStore.getItem(GLOBAL_STATS_KEY));
+  if (globalParsed && typeof globalParsed === "object") {
+    return sanitizeStats(globalParsed);
+  }
+
+  const scopedParsed = parseJson(resolvedStore.getItem(getStatsKey(mode, cadence)));
+  if (scopedParsed && typeof scopedParsed === "object") {
+    const sanitized = sanitizeStats(scopedParsed);
+    resolvedStore.setItem(GLOBAL_STATS_KEY, JSON.stringify(sanitized));
+    return sanitized;
+  }
+
+  const legacyMerged = loadLegacyStatsAggregate(resolvedStore);
+  if (legacyMerged) {
+    resolvedStore.setItem(GLOBAL_STATS_KEY, JSON.stringify(legacyMerged));
+    return legacyMerged;
+  }
+
+  return createEmptyStats();
 }
 
 /**
@@ -175,7 +236,9 @@ export function loadStats(mode, cadence, store) {
  */
 export function saveStats(mode, cadence, stats, store) {
   const resolvedStore = getStore(store);
-  resolvedStore.setItem(getStatsKey(mode, cadence), JSON.stringify(sanitizeStats(stats)));
+  const sanitized = sanitizeStats(stats);
+  resolvedStore.setItem(getStatsKey(mode, cadence), JSON.stringify(sanitized));
+  resolvedStore.setItem(GLOBAL_STATS_KEY, JSON.stringify(sanitized));
 }
 
 /**

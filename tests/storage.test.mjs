@@ -70,7 +70,7 @@ test("storage: save and load active game", () => {
   assert.deepEqual(loaded?.puzzle.answerTokens, game.puzzle.answerTokens);
 });
 
-test("storage: stats are segmented by mode/cadence", () => {
+test("storage: stats persist globally across mode/cadence contexts", () => {
   const storage = new MemoryStorage();
 
   saveStats(
@@ -102,7 +102,8 @@ test("storage: stats are segmented by mode/cadence", () => {
   const beginner = loadStats("beginner", "daily", storage);
   const advanced = loadStats("advanced", "random", storage);
 
-  assert.equal(beginner.played, 3);
+  assert.equal(beginner.played, 10);
+  assert.equal(beginner.won, 4);
   assert.equal(advanced.played, 10);
-  assert.notDeepEqual(beginner, advanced);
+  assert.deepEqual(beginner, advanced);
 });
