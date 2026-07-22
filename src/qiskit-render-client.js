@@ -25,6 +25,18 @@ function unique(values) {
   return [...new Set(values.filter((value) => typeof value === "string" && value.length > 0))];
 }
 
+/**
+ * @param {string} hostname
+ */
+function isLocalHost(hostname) {
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "::1" ||
+    hostname.endsWith(".local")
+  );
+}
+
 function getRenderEndpoints() {
   const configured = getConfiguredEndpoint();
   if (configured) {
@@ -36,8 +48,13 @@ function getRenderEndpoints() {
   if (typeof globalThis !== "undefined" && globalThis.location?.origin) {
     candidates.push(`${globalThis.location.origin}/render`);
   }
-  candidates.push("http://localhost:8765/render");
-  candidates.push(DEFAULT_RENDER_ENDPOINT);
+
+  const hostname = globalThis.location?.hostname ?? "";
+  if (isLocalHost(hostname)) {
+    candidates.push("http://localhost:8765/render");
+    candidates.push(DEFAULT_RENDER_ENDPOINT);
+  }
+
   return unique(candidates);
 }
 
